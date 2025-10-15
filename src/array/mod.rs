@@ -1,5 +1,10 @@
+pub mod iter;
 use std::{
-    alloc::{Allocator, Global, Layout}, fmt::Debug, mem::{ManuallyDrop, MaybeUninit}, ops::{Deref, DerefMut}, ptr::NonNull
+    alloc::{Allocator, Global, Layout},
+    fmt::Debug,
+    mem::MaybeUninit,
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 
 pub struct Array<T, A: Allocator = Global> {
@@ -192,6 +197,45 @@ impl<T, A: Allocator> Array<T, A> {
     const fn value_slice(&self) -> NonNull<[T]> {
         NonNull::slice_from_raw_parts(self.buf.cast(), self.len)
     }
+    pub fn retain(&mut self, mut pred: impl FnMut(&mut T) -> bool) {
+        struct DropGuard<'a, T, A: Allocator> {
+            write: usize,
+            read: usize,
+            arr: &'a mut Array<T, A>,
+        }
+        impl<'a, T, A: Allocator> Drop for DropGuard<'a, T, A> {
+            fn drop(&mut self) {
+                unsafe {
+                    while self.read < self.arr.len {
+                        self.arr.idx_to_ptr(self.read).drop_in_place();
+                        self.read += 1;
+                    }
+                }
+                self.arr.len = self.write;
+            }
+        }
+        let mut guard = DropGuard {
+            write: 0,
+            read: 0,
+            arr: self,
+        };
+        while guard.read < guard.arr.len {
+            unsafe {
+                if !pred(guard.arr.get_unchecked_mut(guard.read)) {
+                    guard.arr.idx_to_ptr(guard.read).drop_in_place();
+                    guard.read += 1;
+                    continue;
+                }
+                guard
+                    .arr
+                    .idx_to_ptr(guard.write)
+                    .copy_from(guard.arr.idx_to_ptr(guard.read), 1);
+                guard.write += 1;
+            }
+            guard.read += 1;
+        }
+        guard.arr.len = guard.write;
+    }
 }
 
 impl<T: Debug, A: Allocator> Debug for Array<T, A> {
@@ -236,35 +280,6 @@ impl<T> Default for Array<T> {
     }
 }
 
-impl<'s, T, A: Allocator> IntoIterator for &'s Array<T, A> {
-    type IntoIter = core::slice::Iter<'s, T>;
-    type Item = &'s T;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'s, T, A: Allocator> IntoIterator for &'s mut Array<T, A> {
-    type IntoIter = core::slice::IterMut<'s, T>;
-    type Item = &'s mut T;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
-    }
-}
-
-impl<T, A: Allocator> IntoIterator for Array<T, A> {
-    type IntoIter = IntoIter<T, A>;
-    type Item = T;
-    fn into_iter(self) -> Self::IntoIter {
-        IntoIter {
-            start: 0,
-            storage: ManuallyDrop::new(self),
-        }
-    }
-}
-
 impl<T, A: Allocator> Drop for Array<T, A> {
     fn drop(&mut self) {
         let arr = core::mem::ManuallyDrop::new(self);
@@ -272,75 +287,6 @@ impl<T, A: Allocator> Drop for Array<T, A> {
             let copy: Array<T, A> = core::ptr::read(*arr.deref());
             // Defer to IntoIter's Drop impl
             _ = copy.into_iter();
-        }
-    }
-}
-
-pub struct IntoIter<T, A: Allocator> {
-    storage: ManuallyDrop<Array<T, A>>,
-    start: usize,
-}
-
-impl<T, A: Allocator> Iterator for IntoIter<T, A> {
-    type Item = T;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.start >= self.storage.len {
-            return None;
-        }
-        let val = unsafe { core::ptr::read(self.storage.idx_to_ptr(self.start)) };
-        self.start += 1;
-        Some(val)
-    }
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let old_start = self.start;
-        self.start = old_start.saturating_add(n).min(self.storage.len);
-        let removed = old_start..self.start;
-        for idx in removed {
-            unsafe {
-                let val = self.storage.idx_to_ptr(idx);
-                val.drop_in_place();
-            }
-        }
-        self.next()
-    }
-}
-impl<T, A: Allocator> ExactSizeIterator for IntoIter<T, A> {
-    fn len(&self) -> usize {
-        self.storage.len - self.start
-    }
-}
-impl<T, A: Allocator> DoubleEndedIterator for IntoIter<T, A> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.start >= self.storage.len {
-            return None;
-        }
-        unsafe { Some(self.storage.pop_unchecked()) }
-    }
-    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        let old_end = self.storage.len;
-        self.storage.len = old_end.saturating_sub(n).max(self.start);
-        let removed = self.storage.len..old_end;
-        for idx in removed {
-            unsafe {
-                let val = self.storage.idx_to_ptr(idx);
-                val.drop_in_place();
-            }
-        }
-        self.next()
-    }
-}
-impl<T, A: Allocator> Drop for IntoIter<T, A> {
-    fn drop(&mut self) {
-        // Drop all remaining elements
-        _ = self.nth(usize::MAX);
-        if size_of::<T>() == 0 {
-            return;
-        }
-        unsafe {
-            self.storage.alloc.deallocate(
-                self.storage.buf.cast(),
-                Array::<T>::layout_for_len(self.storage.buf.len()),
-            );
         }
     }
 }
