@@ -1,4 +1,5 @@
 pub mod iter;
+mod drain;
 use std::{
     alloc::{Allocator, Global, Layout},
     fmt::Debug,
@@ -130,6 +131,9 @@ impl<T, A: Allocator> Array<T, A> {
     }
     pub const fn len(&self) -> usize {
         self.len
+    }
+    pub const unsafe fn set_len(&mut self, len: usize){
+        self.len = len;
     }
     pub const fn is_empty(&self) -> bool {
         self.len() == 0
