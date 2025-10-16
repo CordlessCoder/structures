@@ -11,11 +11,7 @@ impl<T: Debug> Drop for Loud<T> {
 }
 
 fn main() {
-    let mut arr = Array::new();
-    for i in 0..20 {
-        arr.push(Loud(i));
-    }
-    arr.drain(..);
-    // arr.retain(|i| i.0 % 2 == 0);
+    let mut arr: Array<i32> = (0..20).collect();
+    arr.pop();
     dbg!(&arr);
 }

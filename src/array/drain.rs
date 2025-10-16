@@ -20,6 +20,7 @@ impl<T, A: Allocator> Array<T, A> {
         if end > self.len() {
             panic!("End index {end} would be out of bounds for Array of length {len}", len = self.len());
         }
+        unsafe { self.set_len(start) };
         Drain {
             arr: self,
             hole_start: start,

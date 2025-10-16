@@ -146,25 +146,10 @@ impl<T, A: Allocator> Array<T, A> {
         self.len += 1;
         unsafe {
             let insert_at = self.idx_to_ptr(idx);
-            core::ptr::copy(insert_at, insert_at.add(1), self.len - idx);
+            insert_at.copy_to(insert_at.add(1), self.len - idx);
             insert_at.write(value);
         }
         Ok(())
-    }
-    pub fn swap(&mut self, a: usize, b: usize) {
-        if a >= self.len {
-            panic!(
-                "Swap with index {a} is out of bounds for length {len}",
-                len = self.len()
-            );
-        }
-        if b >= self.len {
-            panic!(
-                "Swap with index {b} is out of bounds for length {len}",
-                len = self.len()
-            );
-        }
-        unsafe { self.idx_to_ptr(a).swap(self.idx_to_ptr(b)) };
     }
     /// A remove operation that, instead of preserving order, replaces the element with the last
     /// element in the list.
