@@ -14,7 +14,12 @@ impl<T, A: Allocator> Array<T, A> {
             Bound::Included(&n) => n.saturating_add(1),
             Bound::Excluded(&n) => n,
         };
-        // TODO: Handle out of bounds indices
+        if start >= self.len() {
+            panic!("Start index {start} would be out of bounds for Array of length {len}", len = self.len());
+        }
+        if end > self.len() {
+            panic!("End index {end} would be out of bounds for Array of length {len}", len = self.len());
+        }
         Drain {
             arr: self,
             hole_start: start,

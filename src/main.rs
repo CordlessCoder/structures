@@ -15,7 +15,7 @@ fn main() {
     for i in 0..20 {
         arr.push(Loud(i));
     }
-    arr.drain(0..5);
+    arr.drain(..);
     // arr.retain(|i| i.0 % 2 == 0);
     dbg!(&arr);
 }
